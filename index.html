@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TeraLink — Stream & Download TeraBox Videos</title>
+<meta name="description" content="Premium TeraBox player and downloader. Paste a link, stream instantly in HD, download in any quality. No app. No login. No nonsense." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+<style>
+/* ------------------------------------------------------------------
+   AETHER — single-file frontend
+   To wire the real backend: search "BACKEND_INTEGRATION" in the JS.
+------------------------------------------------------------------ */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root[data-theme="dark"] {
+  --bg: #07070d;
+  --bg-soft: #0e0e18;
+  --glass: rgba(255,255,255,0.04);
+  --glass-strong: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.16);
+  --text: #f4f4f7;
+  --text-muted: #9a9aa8;
+  --text-dim: #5a5a68;
+  --accent: #67e8f9;
+  --accent-2: #f0abfc;
+  --accent-3: #fde68a;
+  --success: #86efac;
+  --shadow-glow: 0 0 80px rgba(103, 232, 249, 0.15);
+}
+
+:root[data-theme="light"] {
+  --bg: #f6f5f0;
+  --bg-soft: #ecebe4;
+  --glass: rgba(255,255,255,0.6);
+  --glass-strong: rgba(255,255,255,0.8);
+  --border: rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.16);
+  --text: #0a0a0f;
+  --text-muted: #4a4a52;
+  --text-dim: #8a8a92;
+  --accent: #0891b2;
+  --accent-2: #c026d3;
+  --accent-3: #ca8a04;
+  --success: #16a34a;
+  --shadow-glow: 0 0 80px rgba(8, 145, 178, 0.12);
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Sora', sans-serif;
+  font-weight: 400;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background 0.6s ease, color 0.6s ease;
+}
+
+body {
+  position: relative;
+  min-height: 100vh;
+}
+
+/* ─── Ambient background blobs ─── */
+.atmosphere {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+  pointer-events: none;
+}
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.5;
+  animation: drift 22s ease-in-out infinite alternate;
+}
+.blob.b1 { width: 540px; height: 540px; background: #22d3ee; top: -200px; left: -150px; }
+.blob.b2 { width: 480px; height: 480px; background: #d946ef; top: 30%; right: -180px; animation-delay: -8s; }
+.blob.b3 { width: 600px; height: 600px; background: #6366f1; bottom: -250px; left: 30%; animation-delay: -16s; }
+:root[data-theme="light"] .blob { opacity: 0.22; }
+
+@keyframes drift {
+  0%   { transform: translate(0,0) scale(1); }
+  50%  { transform: translate(60px,-40px) scale(1.08); }
+  100% { transform: translate(-40px,30px) scale(0.95); }
+}
+
+/* grain overlay */
+.grain {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  opacity: 0.06; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ─── Glass primitive ─── */
+.glass {
+  background: var(--glass);
+  backdrop-filter: blur(24px) saturate(140%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+}
+.glass-strong {
+  background: var(--glass-strong);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border: 1px solid var(--border-strong);
+}
+
+/* ─── Layout container ─── */
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+
+/* ─── Navigation ─── */
+nav {
+  position: sticky; top: 16px; z-index: 50;
+  margin: 16px auto 0; max-width: 1180px;
+  padding: 12px 20px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  border: 1px solid var(--border-strong);
+}
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; font-size: 17px; }
+.logo-mark {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  display: grid; place-items: center;
+  box-shadow: 0 0 24px var(--accent);
+}
+.logo-mark svg { width: 16px; height: 16px; }
+.nav-links { display: flex; gap: 28px; }
+.nav-links a {
+  color: var(--text-muted); text-decoration: none; font-size: 14px;
+  transition: color 0.2s;
+}
+.nav-links a:hover { color: var(--text); }
+.nav-actions { display: flex; gap: 8px; align-items: center; }
+
+.theme-toggle {
+  width: 38px; height: 38px; border-radius: 50%;
+  background: var(--glass); border: 1px solid var(--border);
+  cursor: pointer; display: grid; place-items: center;
+  color: var(--text); transition: all 0.3s;
+}
+.theme-toggle:hover { background: var(--glass-strong); transform: rotate(20deg); }
+.theme-toggle svg { width: 16px; height: 16px; }
+
+.btn {
+  font-family: inherit;
+  border: none; cursor: pointer; font-weight: 500; font-size: 14px;
+  padding: 10px 18px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: all 0.25s ease;
+}
+.btn-primary {
+  background: var(--text); color: var(--bg);
+}
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.btn-ghost {
+  background: var(--glass); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { background: var(--glass-strong); border-color: var(--border-strong); }
+
+@media (max-width: 760px) { .nav-links { display: none; } }
+
+/* ─── Hero ─── */
+header.hero {
+  padding: 90px 0 80px;
+  text-align: center;
+}
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--glass); border: 1px solid var(--border);
+  font-size: 12px; color: var(--text-muted); letter-spacing: 0.05em;
+  margin-bottom: 28px;
+  animation: fadeUp 0.7s ease 0.1s both;
+}
+.eyebrow .pulse {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  animation: pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+h1.headline {
+  font-size: clamp(44px, 8vw, 92px);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+  margin: 0 auto 24px;
+  max-width: 880px;
+  animation: fadeUp 0.8s ease 0.2s both;
+}
+h1.headline em {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-weight: 400;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-right: 6px;
+}
+
+.subhead {
+  font-size: 18px;
+  color: var(--text-muted);
+  max-width: 560px;
+  margin: 0 auto 44px;
+  animation: fadeUp 0.8s ease 0.3s both;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Paste box ─── */
+.paste-card {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-glow);
+  animation: fadeUp 0.8s ease 0.4s both;
+}
+.paste-card input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 15px;
+  padding: 8px 18px;
+}
+.paste-card input::placeholder { color: var(--text-dim); }
+
+.paste-btn {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #07070d;
+  font-weight: 600;
+  padding: 12px 26px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.paste-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(103, 232, 249, 0.4); }
+.paste-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+@media (max-width: 540px) {
+  .paste-card { flex-direction: column; padding: 12px; border-radius: 24px; }
+  .paste-btn { width: 100%; justify-content: center; }
+}
+
+/* ─── Trust row ─── */
+.trust {
+  margin-top: 28px;
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 24px 36px;
+  color: var(--text-muted);
+  font-size: 13px;
+  animation: fadeUp 0.8s ease 0.5s both;
+}
+.trust span { display: inline-flex; align-items: center; gap: 6px; }
+.trust svg { color: var(--accent); }
+
+/* ─── Result panel (player + downloader) ─── */
+.result-section {
+  padding: 30px 0 80px;
+}
+.result-card {
+  padding: 28px;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 28px;
+  animation: fadeUp 0.5s ease both;
+}
+@media (max-width: 860px) { .result-card { grid-template-columns: 1fr; } }
+
+.video-area {
+  position: relative;
+  aspect-ratio: 16/9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1a1a28, #0a0a14);
+  border: 1px solid var(--border);
+}
+.video-area .thumb {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse at 30% 30%, rgba(103, 232, 249, 0.3), transparent 60%),
+    radial-gradient(ellipse at 70% 70%, rgba(240, 171, 252, 0.3), transparent 60%),
+    linear-gradient(135deg, #1e1e2e, #0a0a14);
+}
+.play-overlay {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+.play-overlay:hover { background: rgba(0,0,0,0.2); }
+.play-btn-large {
+  width: 80px; height: 80px; border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.25);
+  display: grid; place-items: center;
+  transition: transform 0.2s;
+}
+.play-overlay:hover .play-btn-large { transform: scale(1.08); }
+.play-btn-large svg { color: white; margin-left: 4px; }
+
+.video-info { display: flex; flex-direction: column; gap: 18px; }
+.video-title {
+  font-size: 20px; font-weight: 600; letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.video-meta {
+  display: flex; gap: 16px; color: var(--text-muted); font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.video-meta span { display: inline-flex; align-items: center; gap: 6px; }
+
+.quality-section { margin-top: 6px; }
+.quality-label {
+  font-size: 12px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.quality-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.quality-chip {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.quality-chip strong { color: var(--text); font-weight: 500; font-size: 13px; }
+.quality-chip small { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.quality-chip:hover { border-color: var(--border-strong); }
+.quality-chip.active {
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.15), rgba(240, 171, 252, 0.15));
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.action-row { display: flex; gap: 10px; margin-top: 14px; }
+.action-row .btn { flex: 1; justify-content: center; padding: 12px 18px; }
+.btn-download {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #07070d; font-weight: 600;
+}
+.btn-download:hover { transform: translateY(-1px); box-shadow: 0 8px 30px rgba(103, 232, 249, 0.4); }
+
+/* loading state */
+.loading-card {
+  padding: 28px;
+  display: flex; align-items: center; gap: 18px;
+  animation: fadeUp 0.4s ease both;
+}
+.spinner {
+  width: 28px; height: 28px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* error state */
+.error-card {
+  padding: 20px 24px;
+  display: flex; align-items: center; gap: 14px;
+  color: #fca5a5; border-color: rgba(252, 165, 165, 0.3);
+}
+
+/* ─── Features ─── */
+section.features { padding: 80px 0; }
+.section-title {
+  font-size: clamp(32px, 5vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  margin-bottom: 14px;
+  text-align: center;
+}
+.section-title em {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-weight: 400;
+  color: var(--accent);
+}
+.section-sub {
+  text-align: center;
+  color: var(--text-muted);
+  max-width: 520px; margin: 0 auto 56px;
+  font-size: 16px;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 860px) { .features-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 540px) { .features-grid { grid-template-columns: 1fr; } }
+
+.feature-card {
+  padding: 28px 24px;
+  transition: transform 0.3s, border-color 0.3s;
+}
+.feature-card:hover { transform: translateY(-4px); border-color: var(--border-strong); }
+.feature-icon {
+  width: 44px; height: 44px; border-radius: 12px;
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.18), rgba(240, 171, 252, 0.18));
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  margin-bottom: 18px;
+  color: var(--accent);
+}
+.feature-card h3 {
+  font-size: 17px; font-weight: 600; margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+.feature-card p {
+  font-size: 14px; color: var(--text-muted); line-height: 1.6;
+}
+
+/* ─── How it works ─── */
+section.how { padding: 80px 0; }
+.steps {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  position: relative;
+}
+@media (max-width: 860px) { .steps { grid-template-columns: 1fr; } }
+.step {
+  padding: 32px 26px;
+  position: relative;
+}
+.step-num {
+  font-family: 'Instrument Serif', serif;
+  font-style: italic;
+  font-size: 56px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  line-height: 1; margin-bottom: 14px;
+}
+.step h4 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
+.step p { font-size: 14px; color: var(--text-muted); line-height: 1.6; }
+
+/* ─── History ─── */
+section.history { padding: 50px 0 80px; }
+.history-card { padding: 28px; }
+.history-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.history-head h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.history-clear {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text-muted); font-family: inherit; font-size: 13px;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.history-clear:hover { color: var(--text); }
+.history-list { display: flex; flex-direction: column; gap: 8px; }
+.history-item {
+  padding: 12px 16px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.history-item:hover { background: var(--glass-strong); border-color: var(--border-strong); }
+.history-item-info { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+.history-item-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: linear-gradient(135deg, rgba(103,232,249,0.15), rgba(240,171,252,0.15));
+  display: grid; place-items: center;
+  color: var(--accent); flex-shrink: 0;
+}
+.history-item-text { min-width: 0; }
+.history-item-url {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%;
+}
+.history-item-time { font-size: 12px; color: var(--text-dim); }
+.history-empty {
+  text-align: center; padding: 40px 20px;
+  color: var(--text-muted); font-size: 14px;
+}
+
+/* ─── FAQ ─── */
+section.faq { padding: 60px 0 100px; }
+.faq-grid { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+.faq-item {
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.faq-item summary {
+  padding: 22px 26px;
+  list-style: none;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  font-weight: 500;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: '+';
+  font-size: 22px;
+  font-weight: 300;
+  color: var(--accent);
+  transition: transform 0.3s;
+  flex-shrink: 0;
+}
+.faq-item[open] summary::after { transform: rotate(45deg); }
+.faq-item .faq-body {
+  padding: 0 26px 22px;
+  color: var(--text-muted);
+  font-size: 14.5px; line-height: 1.65;
+}
+
+/* ─── Footer ─── */
+footer {
+  padding: 60px 0 40px;
+  border-top: 1px solid var(--border);
+  margin-top: 40px;
+}
+.footer-top {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 40px; flex-wrap: wrap;
+  margin-bottom: 40px;
+}
+.footer-brand { max-width: 320px; }
+.footer-brand p {
+  color: var(--text-muted); font-size: 14px; margin-top: 12px; line-height: 1.6;
+}
+.footer-cols { display: flex; gap: 60px; flex-wrap: wrap; }
+.footer-col h5 {
+  font-size: 12px; color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 14px;
+  font-weight: 500;
+}
+.footer-col a {
+  display: block; color: var(--text-muted); text-decoration: none;
+  font-size: 14px; margin-bottom: 8px;
+  transition: color 0.2s;
+}
+.footer-col a:hover { color: var(--text); }
+.footer-bottom {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-top: 24px; border-top: 1px solid var(--border);
+  color: var(--text-dim); font-size: 12px; gap: 16px; flex-wrap: wrap;
+}
+.disclaimer {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 12px; line-height: 1.6;
+}
+
+/* selection */
+::selection { background: var(--accent); color: var(--bg); }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--glass-strong); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+</style>
+</head>
+<body>
+
+<div class="atmosphere">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+</div>
+<div class="grain"></div>
+
+<!-- Navigation -->
+<nav>
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+        <path d="M8 5v14l11-7z"/>
+      </svg>
+    </div>
+    TeraLink
+  </div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#faq">FAQ</a>
+    <a href="#">Blog</a>
+  </div>
+  <div class="nav-actions">
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+      <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+
+<!-- Hero -->
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow"><span class="pulse"></span> No app · No login · Just paste</div>
+    <h1 class="headline">Stream and download<br><em>TeraBox</em> videos, beautifully.</h1>
+    <p class="subhead">Paste a link. Watch it in HD on any device. Save it to your drive in seconds. That's the whole product.</p>
+
+    <form class="paste-card" id="paste-form" onsubmit="handlePaste(event)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:10px;color:var(--text-muted)">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+      <input type="url" id="paste-input" placeholder="Paste your TeraBox link here..." required />
+      <button class="paste-btn" type="submit" id="paste-btn">
+        Go
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M5 12h14M13 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </form>
+
+    <div class="trust">
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> No installation</span>
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> 1080p HD ready</span>
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Mobile & desktop</span>
+      <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Privacy-first</span>
+    </div>
+  </div>
+</header>
+
+<!-- Result panel -->
+<section class="result-section">
+  <div class="wrap">
+    <div id="result-container"></div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class="features" id="features">
+  <div class="wrap">
+    <h2 class="section-title">Built for <em>speed</em>, designed for delight.</h2>
+    <p class="section-sub">Every detail tuned so you can watch and grab what you need, then get on with your day.</p>
+    <div class="features-grid">
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+        <h3>Instant playback</h3>
+        <p>Adaptive HLS streaming kicks in within a second. No spinners, no buffering on a decent connection.</p>
+      </div>
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+        <h3>Choose your quality</h3>
+        <p>Download in 360p, 720p, or 1080p. Tight on data? Pick low. On Wi-Fi? Go full HD.</p>
+      </div>
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>Privacy-first</h3>
+        <p>We don't log your links, store your files, or sell your data. Sessions are ephemeral.</p>
+      </div>
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+        <h3>Any device</h3>
+        <p>Works in any modern browser on iOS, Android, Windows, macOS. No app to install.</p>
+      </div>
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <h3>Recent links</h3>
+        <p>Your last 10 links stay locally, ready to re-open with one tap. Stored on your device only.</p>
+      </div>
+      <div class="feature-card glass">
+        <div class="feature-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.36.16.7.42 1 .79a1.65 1.65 0 0 0 0 2.42c-.3.37-.64.63-1 .79"/></svg></div>
+        <h3>Zero clutter</h3>
+        <p>No popups. No banner ads stealing your attention. No "download our app." Just the player.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section class="how" id="how">
+  <div class="wrap">
+    <h2 class="section-title">Three steps. <em>That's it.</em></h2>
+    <p class="section-sub">From link to playback in under five seconds.</p>
+    <div class="steps">
+      <div class="step glass">
+        <div class="step-num">01</div>
+        <h4>Copy a TeraBox link</h4>
+        <p>Grab any TeraBox share URL — from a friend, a channel, your own account.</p>
+      </div>
+      <div class="step glass">
+        <div class="step-num">02</div>
+        <h4>Paste it above</h4>
+        <p>Drop the link into the input and hit Go. We fetch a playable stream instantly.</p>
+      </div>
+      <div class="step glass">
+        <div class="step-num">03</div>
+        <h4>Watch or download</h4>
+        <p>Stream right in the browser, or pick a quality and save the file to your device.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Recent links -->
+<section class="history" id="history">
+  <div class="wrap">
+    <div class="history-card glass">
+      <div class="history-head">
+        <h3>Recent links</h3>
+        <button class="history-clear" onclick="clearHistory()" id="clear-btn" style="display:none">Clear all</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </div>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="faq" id="faq">
+  <div class="wrap">
+    <h2 class="section-title">Common <em>questions</em></h2>
+    <p class="section-sub">Everything you might want to know before you start.</p>
+    <div class="faq-grid">
+      <details class="faq-item glass">
+        <summary>Is TeraLink free to use?</summary>
+        <div class="faq-body">Yes — fully free with no account required. We may add an optional premium tier in the future for higher concurrent streams, but the core product stays free.</div>
+      </details>
+      <details class="faq-item glass">
+        <summary>Do I need to install anything?</summary>
+        <div class="faq-body">No. TeraLink runs entirely in your browser. Open the site, paste a link, watch or download. Works on phones, tablets, and laptops.</div>
+      </details>
+      <details class="faq-item glass">
+        <summary>Where are my downloads saved?</summary>
+        <div class="faq-body">Directly to your device's default download folder. We never store or proxy your videos through our servers in a way that retains them — sessions are ephemeral.</div>
+      </details>
+      <details class="faq-item glass">
+        <summary>Why is the file smaller than the original?</summary>
+        <div class="faq-body">If you picked a lower quality (720p or 360p), the file is compressed accordingly. Pick 1080p for the original source quality where available.</div>
+      </details>
+      <details class="faq-item glass">
+        <summary>What formats does TeraLink support?</summary>
+        <div class="faq-body">MP4, MKV, MOV, AVI, and HLS streams (.m3u8). Audio in AAC, MP3, and Opus. If the source is something exotic, we'll still try to transcode on the fly.</div>
+      </details>
+      <details class="faq-item glass">
+        <summary>I own the rights to a file — how do I report misuse?</summary>
+        <div class="faq-body">Email our DMCA contact (in the footer). We respond within 24 hours and honor takedown notices promptly.</div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="wrap">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <div class="logo">
+          <div class="logo-mark">
+            <svg viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+          TeraLink
+        </div>
+        <p>A premium player and downloader for TeraBox links. No app. No login. Built for speed.</p>
+      </div>
+      <div class="footer-cols">
+        <div class="footer-col">
+          <h5>Product</h5>
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#faq">FAQ</a>
+        </div>
+        <div class="footer-col">
+          <h5>Legal</h5>
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+          <a href="#">DMCA</a>
+        </div>
+        <div class="footer-col">
+          <h5>Contact</h5>
+          <a href="mailto:hello@aether.app">hello@aether.app</a>
+          <a href="#">Twitter</a>
+        </div>
+      </div>
+    </div>
+    <div class="disclaimer">
+      <strong>Disclaimer:</strong> TeraLink is not affiliated with, endorsed by, or sponsored by TeraBox or its parent companies. We provide a tool to stream and download files from URLs you already have access to. You are responsible for ensuring you have the rights to access and download any content.
+    </div>
+    <div class="footer-bottom" style="margin-top:24px">
+      <span>© 2026 TeraLink. All rights reserved.</span>
+      <span>Made with care.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   STORAGE HELPER — falls back to in-memory if localStorage blocked
+============================================================ */
+const memStore = {};
+const Store = {
+  get(k, fb) {
+    try {
+      const v = localStorage.getItem(k);
+      return v ? JSON.parse(v) : fb;
+    } catch { return memStore[k] ?? fb; }
+  },
+  set(k, v) {
+    try { localStorage.setItem(k, JSON.stringify(v)); }
+    catch { memStore[k] = v; }
+  }
+};
+
+/* ============================================================
+   THEME TOGGLE
+============================================================ */
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  Store.set('theme', theme);
+  const icon = document.getElementById('theme-icon');
+  if (theme === 'light') {
+    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  } else {
+    icon.innerHTML = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>';
+  }
+}
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  setTheme(cur === 'dark' ? 'light' : 'dark');
+}
+// init theme
+(function() {
+  const saved = Store.get('theme', 'dark');
+  setTheme(saved);
+})();
+
+/* ============================================================
+   BACKEND_INTEGRATION
+   ----------------------------------------------------------------
+   This calls our backend at /api/process which holds the xapiverse
+   API key in an environment variable (see server.js + .env).
+
+   NEVER put the API key in this frontend file. Anyone can read it.
+============================================================ */
+async function fetchVideoData(url) {
+  const res = await fetch('/api/process', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(err.error || `Server returned ${res.status}`);
+  }
+  return await res.json();
+}
+
+/* ============================================================
+   HANDLE PASTE → LOAD VIDEO
+============================================================ */
+const TERABOX_RE = /(terabox|1024tera|teraboxapp|terabox\.app|teraboxlink|nephobox|momerybox|tibibox)/i;
+
+let currentVideo = null;
+let selectedQuality = '1080p';
+
+async function handlePaste(e) {
+  e.preventDefault();
+  const input = document.getElementById('paste-input');
+  const url = input.value.trim();
+  if (!url) return;
+
+  // Soft validation — we accept any URL but warn if it doesn't look like TeraBox
+  if (!TERABOX_RE.test(url) && !confirm("That doesn't look like a TeraBox link. Try anyway?")) return;
+
+  const btn = document.getElementById('paste-btn');
+  btn.disabled = true;
+  btn.innerHTML = 'Loading';
+
+  renderLoading();
+
+  try {
+    const data = await fetchVideoData(url);
+    currentVideo = data;
+    selectedQuality = data.qualities[0]?.label || '1080p';
+    addToHistory(url, data.title);
+    renderResult(data);
+  } catch (err) {
+    renderError(err.message || 'Could not process this link. Please try again.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Go <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M13 5l7 7-7 7"/></svg>';
+  }
+}
+
+function renderLoading() {
+  document.getElementById('result-container').innerHTML = `
+    <div class="loading-card glass">
+      <div class="spinner"></div>
+      <div>
+        <div style="font-weight:500;margin-bottom:4px">Fetching your video...</div>
+        <div style="color:var(--text-muted);font-size:13px">This usually takes 1–3 seconds.</div>
+      </div>
+    </div>`;
+}
+
+function renderError(msg) {
+  document.getElementById('result-container').innerHTML = `
+    <div class="error-card glass">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div><strong>Something went wrong.</strong> ${escapeHtml(msg)}</div>
+    </div>`;
+}
+
+function renderResult(data) {
+  // Build quality chips from qualities[]. Each has { label, streamUrl }.
+  // If the original-quality download is bigger than what's streamable, show that as a separate badge.
+  const qualityChips = data.qualities.length ? data.qualities.map(q => `
+    <button class="quality-chip ${q.label === selectedQuality ? 'active' : ''}" data-quality="${q.label}">
+      <strong>${q.label}</strong>
+    </button>
+  `).join('') : '<div style="color:var(--text-dim);font-size:13px">No streaming qualities available — use Download.</div>';
+
+  // Thumbnail: use the API's thumbnail if present, otherwise gradient placeholder.
+  const thumbStyle = data.thumbnail
+    ? `style="background:#000 url('${data.thumbnail}') center/cover no-repeat"`
+    : '';
+
+  // Multi-file notice
+  const multiNote = (data.totalFiles && data.totalFiles > 1)
+    ? `<div style="font-size:12px;color:var(--text-muted);margin-top:4px">📁 This link contains ${data.totalFiles} files — showing the first.</div>`
+    : '';
+
+  // Original-quality badge for the download
+  const origBadge = data.originalQuality
+    ? `<span style="font-size:11px;color:var(--text-dim);margin-left:6px">(${data.originalQuality} · ${escapeHtml(data.sizeFormatted || data.sizeMB + ' MB')})</span>`
+    : '';
+
+  document.getElementById('result-container').innerHTML = `
+    <div class="result-card glass-strong">
+      <div class="video-area" id="video-area">
+        <div class="thumb" id="video-thumb" ${thumbStyle}></div>
+        <video id="video-el" controls playsinline preload="metadata" style="display:none;width:100%;height:100%;background:#000;"></video>
+        <div class="play-overlay" id="play-overlay" onclick="playVideo()">
+          <div class="play-btn-large">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="white"><path d="M8 5v14l11-7z"/></svg>
+          </div>
+        </div>
+      </div>
+      <div class="video-info">
+        <div>
+          <div class="video-title">${escapeHtml(data.title)}</div>
+          <div class="video-meta" style="margin-top:8px">
+            ${data.duration ? `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> ${escapeHtml(data.duration)}</span>` : ''}
+            <span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg> ${escapeHtml(data.sizeFormatted || (data.sizeMB + ' MB'))}</span>
+          </div>
+          ${multiNote}
+        </div>
+        <div class="quality-section">
+          <div class="quality-label">Stream Quality</div>
+          <div class="quality-chips" id="quality-chips">${qualityChips}</div>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-ghost" onclick="playVideo()" ${data.qualities.length ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            Play
+          </button>
+          <button class="btn btn-download" onclick="downloadVideo()" ${data.downloadUrl ? '' : 'disabled style="opacity:.5;cursor:not-allowed"'}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download${origBadge}
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Set the default selected quality to the highest available stream
+  if (data.qualities.length) {
+    selectedQuality = data.qualities[0].label;
+  }
+
+  // Wire quality chip clicks
+  document.querySelectorAll('.quality-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      selectedQuality = chip.dataset.quality;
+      document.querySelectorAll('.quality-chip').forEach(c => c.classList.toggle('active', c.dataset.quality === selectedQuality));
+      // If currently playing, swap source live
+      const video = document.getElementById('video-el');
+      if (video && video.style.display === 'block') {
+        playVideo();
+      }
+    });
+  });
+}
+
+let hlsInstance = null;
+
+function playVideo() {
+  if (!currentVideo || !currentVideo.qualities.length) return;
+  const q = currentVideo.qualities.find(x => x.label === selectedQuality) || currentVideo.qualities[0];
+  const streamUrl = q.streamUrl;
+  if (!streamUrl) return;
+
+  const video = document.getElementById('video-el');
+  const thumb = document.getElementById('video-thumb');
+  const overlay = document.getElementById('play-overlay');
+  if (!video) return;
+
+  // Tear down any existing hls instance
+  if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+
+  // Detect HLS by extension (xapiverse fast_stream_url is HLS .m3u8)
+  const isHls = /\.m3u8(\?|$)/i.test(streamUrl);
+
+  if (isHls && window.Hls && Hls.isSupported()) {
+    hlsInstance = new Hls();
+    hlsInstance.loadSource(streamUrl);
+    hlsInstance.attachMedia(video);
+  } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Native HLS (Safari, iOS)
+    video.src = streamUrl;
+  } else {
+    // Plain MP4 / WebM
+    video.src = streamUrl;
+  }
+
+  // Swap UI: hide thumb + overlay, show video, autoplay
+  thumb.style.display = 'none';
+  overlay.style.display = 'none';
+  video.style.display = 'block';
+  video.play().catch(err => {
+    console.warn('Autoplay blocked:', err);
+  });
+}
+
+function downloadVideo() {
+  if (!currentVideo || !currentVideo.downloadUrl) {
+    alert('Download URL not available for this file.');
+    return;
+  }
+  // normal_dlink from xapiverse is a direct download URL (original quality).
+  const a = document.createElement('a');
+  a.href = currentVideo.downloadUrl;
+  a.download = currentVideo.title || 'video';
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/* ============================================================
+   RECENT LINKS HISTORY (local only)
+============================================================ */
+function addToHistory(url, title) {
+  const history = Store.get('history', []);
+  // dedupe
+  const filtered = history.filter(h => h.url !== url);
+  filtered.unshift({ url, title, at: Date.now() });
+  Store.set('history', filtered.slice(0, 10));
+  renderHistory();
+}
+
+function clearHistory() {
+  if (!confirm('Clear your local link history?')) return;
+  Store.set('history', []);
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = Store.get('history', []);
+  const container = document.getElementById('history-list');
+  const clearBtn = document.getElementById('clear-btn');
+
+  if (!list.length) {
+    container.innerHTML = `<div class="history-empty">No recent links yet. Paste one above to get started.</div>`;
+    clearBtn.style.display = 'none';
+    return;
+  }
+  clearBtn.style.display = 'inline-block';
+  container.innerHTML = list.map(item => `
+    <div class="history-item" onclick="reopen('${encodeURIComponent(item.url)}')">
+      <div class="history-item-info">
+        <div class="history-item-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="history-item-text">
+          <div style="font-size:14px;font-weight:500;margin-bottom:2px">${escapeHtml(item.title || 'Untitled')}</div>
+          <div class="history-item-url">${escapeHtml(item.url)}</div>
+        </div>
+      </div>
+      <div class="history-item-time">${timeAgo(item.at)}</div>
+    </div>
+  `).join('');
+}
+
+function reopen(encUrl) {
+  const url = decodeURIComponent(encUrl);
+  document.getElementById('paste-input').value = url;
+  document.getElementById('paste-form').dispatchEvent(new Event('submit', { cancelable: true }));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return Math.floor(s/60) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  return Math.floor(s/86400) + 'd ago';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// init
+renderHistory();
+
+// smooth scroll for nav anchors
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const id = a.getAttribute('href');
+    if (id.length > 1 && document.querySelector(id)) {
+      e.preventDefault();
+      document.querySelector(id).scrollIntoView({ behavior: 'smooth' });
+    }
+  });
+});
+</script>
+
+</body>
+</html>

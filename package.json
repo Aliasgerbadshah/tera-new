@@ -1,0 +1,9 @@
+{
+  "name": "teralink",
+  "version": "1.0.0",
+  "description": "Premium TeraBox player and downloader",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
